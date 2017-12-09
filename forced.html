@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style type="text/css">
+        .node {}
+
+        line { stroke-width: 10px; }
+		.linkBlack { stroke: #000; }
+		.linkRed { stroke: red; }
+		#data {
+			position: fixed;
+			top:0;
+			left:0;
+			border: black solid 1px;
+		}
+		body{
+			padding:0;
+			margin:0;
+		}
+    </style>
+</head>
+<body>
+<svg width="960" height="600"></svg>
+<div id="data">
+<label>Port: </label><input maxlength="5" size="5" type="text" id="port"></input>
+<br />
+<label>Host Filter: </label><input id="host"></input>
+<br />
+<button onclick="updateD3()" id="update">Update</button>
+</div>
+<script src="http://d3js.org/d3.v4.min.js" type="text/javascript"></script>
+<script src="http://d3js.org/d3-selection-multi.v1.js"></script>
+
+<script type="text/javascript">
+	document.getElementsByTagName("svg")[0].setAttribute("width", window.innerWidth);
+	document.getElementsByTagName("svg")[0].setAttribute("height", window.innerHeight);
+    var colors = d3.scaleOrdinal(d3.schemeCategory10);
+
+	
+    var svg = d3.select("svg"),
+        width = +svg.attr("width"),
+        height = +svg.attr("height"),
+		transform = d3.zoomIdentity,
+        node,
+        link;
+		
+	var zoom = d3.zoom()
+		.scaleExtent([1, 60])
+		.translateExtent([[-100, -100], [width + 1000, height + 1000]])
+		.on("zoom", zoomed);
+		
+    var simulation = d3.forceSimulation()
+        .force("link", d3.forceLink().id(function (d) {return d.id;}).distance(400).strength(1))
+        .force("charge", d3.forceManyBody())
+        .force("center", d3.forceCenter(width / 2, height / 2));
+
+	svg.call(zoom)
+	
+    d3.json("output.json", function (error, graph) {
+        if (error) throw error;
+        update(graph);
+    })
+	
+	function zoomed() {
+	  svg.attr("transform", d3.event.transform);
+	}
+    function update(graph) {
+		nodes = [];
+		links = [];
+		totalUpDown =0;
+		for(src in graph) {
+			nodes.push({'id':src, 'group':1});
+			for(proto in graph[src]){
+				for(port in graph[src][proto]){
+					for(host in graph[src][proto][port]){
+						nodes.push({'id': host+":"+port, 'group': 2, "port": port});
+						download = graph[src][proto][port][host]['download'];
+						upload = graph[src][proto][port][host]['upload'];
+						links.push({'source': src, 'target': host+":"+port, 'port': port, 'flow': 'download', 'value': download + upload, 'download': download, 'upload': upload });
+						totalUpDown = totalUpDown + download + upload;
+					}
+				}
+			}
+		}
+		
+		//console.log(nodes);
+		
+        link = svg.selectAll(".link")
+            .data(links)
+            .enter()
+            .append("line")
+            .attr("class", "link")
+			.style("stroke-opacity", function(d){
+
+				return (d.value / totalUpDown) * 10;
+			})
+			.attr("class", function(d){
+				if (d.port == 80) { return "linkRed"; }
+				if (d.port == 443) { return "linkBlack"; }
+				return "link";
+			})
+            //.attr('marker-end','url(#arrowhead)')
+
+        link.append("title")
+            .text(function (d) {return d.source + "->" + d.target + "    Download: " + parseFloat(d.download /1024).toFixed(2) + "KB    Upload: " + parseFloat(d.upload/1024).toFixed(2) + "KB";});
+
+        node = svg.selectAll(".node")
+            .data(nodes)
+            .enter()
+            .append("g")
+            .attr("class", "node")
+            .call(d3.drag()
+                    .on("start", dragstarted)
+                    .on("drag", dragged)
+                    .on("end", dragended)
+            );
+
+        node.append("circle")
+            .attr("r", function(d){
+				d.weight=0;
+				link.filter(function(l) {
+				   if (l.source == d.id || l.target == d.id) { d.weight = d.weight + 1; }
+				 });
+				 //console.log(d.id + " " + d.weight);
+				 var minRadius = 5;
+				 var maxRadius = 30;
+				 var radius = minRadius + (d.weight/2);
+
+				 if(radius > maxRadius){
+				    return maxRadius;
+				 }
+				 else {
+				    return minRadius + (d.weight/2);
+				 }
+			})
+            .style("fill", function (d, i) {return colors(i);})
+
+        node.append("title")
+            .text(function (d) {return d.id;});
+
+        node.append("text")
+            .attr("dy", -3)
+            .text(function (d) {return d.id;});
+
+        simulation
+            .nodes(nodes)
+            .on("tick", ticked);
+
+        simulation.force("link")
+            .links(links);
+    }
+
+    function ticked() {
+        link
+            .attr("x1", function (d) {return d.source.x;})
+            .attr("y1", function (d) {return d.source.y;})
+            .attr("x2", function (d) {return d.target.x;})
+            .attr("y2", function (d) {return d.target.y;});
+
+        node
+            .attr("transform", function (d) {return "translate(" + d.x + ", " + d.y + ")";});
+    }
+
+    function dragstarted(d) {
+        if (!d3.event.active) simulation.alphaTarget(0.3).restart()
+        d.fx = d.x;
+        d.fy = d.y;
+    }
+
+    function dragged(d) {
+        d.fx = d3.event.x;
+        d.fy = d3.event.y;
+    }
+
+    function dragended(d) {
+        if (!d3.event.active) simulation.alphaTarget(0);
+        d.fx = undefined;
+        d.fy = undefined;
+    }
+
+	function updateD3() {
+		if(document.getElementById("update").innerText == "Update"){
+			document.getElementById("update").innerText = "Reset";
+		}
+		else {
+			location.reload();
+		}
+		hostname = document.getElementById("host").value
+		port = document.getElementById("port").value
+		d3.selectAll("line")
+			.attr("style", function(d){
+				if(port != d.port && port !=""){
+					return "display: none;";
+				}
+				if(!d.target.id.includes(hostname) && hostname != "") {
+					return "display: none;";
+				}
+				return d3.select(this).attr("style")
+			})
+		d3.selectAll("g")
+			.attr("style", function(d){
+				if(port != d.port && d.group !=1 && port != ""){
+					return "display: none;";
+				}
+				if(!d.id.includes(hostname) && hostname !="" && d.group !=1) {
+					return "display: none;";
+				}
+				return d3.select(this).attr("style")
+			})
+			
+	}
+</script>
+
+</body>
+</html>
