@@ -47,3 +47,7 @@ http://127.0.0.1:8000/forced.html
 
 and the treemap on:
 http://127.0.0.1:8000/treemap.html
+
+
+The d3 Treemap visualisation is based on http://bl.ocks.org/ganeshv/6a8e9ada3ab7f2d88022
+THe d3 forced graph is based on various examples on http://bl.ocks.org
